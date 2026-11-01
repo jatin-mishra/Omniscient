@@ -5,13 +5,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.router import api_router
-from app.core.config import get_settings
-from app.core.errors import register_exception_handlers
-from app.core.logging import configure_logging
+from app.config import get_settings
 from app.db.elastic import create_es_client
-from app.db.postgres import create_db
-from app.middleware.request_id import RequestIdMiddleware
+from app.db.postgres import create_db, create_tables
+from app.errors import register_exception_handlers
+from app.logging import configure_logging
+from app.middlewares.request_id import RequestIdMiddleware
+from app.onboarding import models as onboarding_models  # noqa: F401  registers tables
+from app.retrieval import models as retrieval_models  # noqa: F401  registers tables
+from app.retrieval.models.chunk import ensure_chunk_index
+from app.router import api_router
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +27,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine, app.state.sessionmaker = create_db(settings)
     app.state.es = create_es_client(settings)
     try:
+        if settings.create_schema_on_startup:
+            await create_tables(app.state.engine)
+            await ensure_chunk_index(app.state.es, settings.es_chunks_index)
+            log.info("storage ready: tables created, index %s", settings.es_chunks_index)
         yield
     finally:
         await app.state.es.close()

@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api.deps import get_es
 from app.db import postgres
+from app.db.deps import get_es
 from app.main import app
 
 

@@ -24,30 +24,38 @@ make fmt         # ruff format + import sort
 
 ```bash
 make infra-up          # postgres:16 + elasticsearch:8 via docker compose
-make init-storage      # create table `documents` and index `chunks` (idempotent)
 make test-integration  # tests against the real stores
 curl -i http://127.0.0.1:8000/health/ready
 ```
 
-Env vars (defaults match docker-compose): `DATABASE_URL`, `ELASTICSEARCH_URL`, `ES_CHUNKS_INDEX`.
-Schema is created with `create_all`; switch to Alembic before the first real schema change.
+Env vars (defaults match docker-compose): `DATABASE_URL`, `ELASTICSEARCH_URL`, `ES_CHUNKS_INDEX`,
+`CREATE_SCHEMA_ON_STARTUP` (default `true`).
+On startup the app creates missing tables and the `chunks` index (idempotent `create_all`).
+`create_all` never alters existing tables: a column change needs manual DDL or a migration tool.
 
 ## Layout
 
 ```
 app/
-  main.py            app factory, lifespan, middleware, routers
-  core/config.py     typed settings (env + .env), cached
-  core/logging.py    stdlib logging with request id on every line
-  core/errors.py     AppError + JSON error envelope
-  middleware/        pure-ASGI request-id middleware
-  api/               routers (health at /health; add versioned routers under api/v1/)
-  schemas/           pydantic request/response models
-  db/                engine/session factory, ES client, ORM models
-  repositories/      data access for documents (PG) and chunks (ES)
-  scripts/           one-off CLIs (init_storage)
-tests/               TestClient-based tests
+  main.py            app factory, lifespan (creates schema), middleware, routers
+  router.py          global router: /health + every module under /v1
+  config.py          typed settings (env + .env), cached
+  logging.py         stdlib logging with request id on every line
+  errors.py          AppError (+ NotFound, Conflict) and the JSON error envelope
+  health.py          /health, /health/ready
+  middlewares/       pure-ASGI request-id middleware
+  db/                shared infra: Base + mixins, engine/session, ES client, deps
+  onboarding/        teams, users, groups, group-users
+  retrieval/         documents, query, search
+  policy_engine/  audit/  tracker/   (empty skeletons)
+tests/               TestClient-based tests; integration/ needs docker-compose
 ```
+
+Each business module has the same shape: `api/` (routers), `core/` (business rules,
+owns the commit), `models/` (ORM), `schemas/` (pydantic), `repositories/` (plain
+select / insert / update, never commit) and `deps.py`. Modules import only the global
+layer, never each other (enforced by `tests/test_module_boundaries.py`), so any module
+can be extracted into its own service.
 
 ## Conventions
 

@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.core.config import Settings
-from app.db.models import Base
+from app.config import Settings
+from app.db.base import Base
 
 log = logging.getLogger(__name__)
 

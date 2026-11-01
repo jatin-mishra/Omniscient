@@ -6,12 +6,13 @@ from elasticsearch import AsyncElasticsearch
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
-from app.core.errors import SearchUnavailableError
-from app.db.elastic import create_es_client, ensure_chunk_index
+from app.config import get_settings
+from app.db.elastic import create_es_client
 from app.db.postgres import create_db, create_tables
-from app.repositories.chunk_search_repository import ChunkSearchRepository
-from app.repositories.document_repository import DocumentRepository
+from app.retrieval.errors import SearchUnavailableError
+from app.retrieval.models.chunk import ensure_chunk_index
+from app.retrieval.repositories.chunk_search_repository import ChunkSearchRepository
+from app.retrieval.repositories.document_repository import DocumentRepository
 
 pytestmark = pytest.mark.integration
 

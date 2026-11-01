@@ -1,4 +1,4 @@
-.PHONY: dev test lint fmt typecheck infra-up infra-down init-storage test-integration
+.PHONY: dev test lint fmt typecheck infra-up infra-down test-integration
 
 dev:
 	uv run uvicorn app.main:app --reload
@@ -20,9 +20,6 @@ infra-up:
 
 infra-down:
 	docker compose down
-
-init-storage:
-	uv run python -m app.scripts.init_storage
 
 test-integration:
 	uv run pytest -q -m integration

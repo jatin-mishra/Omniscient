@@ -1,10 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_chunk_search_repo
-from app.core.errors import SearchUnavailableError
 from app.main import app
-from app.schemas.rag import SearchHit
+from app.retrieval.deps import get_chunk_search_repo
+from app.retrieval.errors import SearchUnavailableError
+from app.retrieval.schemas.rag import SearchHit
 
 HIT = SearchHit(chunk_id="c1", document_id="d1", text="hello world", score=1.5)
 
