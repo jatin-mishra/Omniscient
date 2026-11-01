@@ -32,6 +32,8 @@ Env vars (defaults match docker-compose): `DATABASE_URL`, `ELASTICSEARCH_URL`, `
 `CREATE_SCHEMA_ON_STARTUP` (default `true`).
 On startup the app creates missing tables and the `chunks` index (idempotent `create_all`).
 `create_all` never alters existing tables: a column change needs manual DDL or a migration tool.
+Upgrading from the old retrieval schema: `DROP TABLE documents;` in Postgres and delete the old
+`chunks` index in Elasticsearch (`curl -X DELETE localhost:9200/chunks`), then restart.
 
 ## Layout
 
@@ -46,7 +48,7 @@ app/
   middlewares/       pure-ASGI request-id middleware
   db/                shared infra: Base + mixins, engine/session, ES client, deps
   onboarding/        teams, users, groups, group-users
-  retrieval/         documents, query, search
+  retrieval/         directories, documents, chunks
   policy_engine/  audit/  tracker/   (empty skeletons)
 tests/               TestClient-based tests; integration/ needs docker-compose
 ```
