@@ -25,3 +25,10 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
     )
+
+
+class AuditMixin:
+    """Who created / last changed the row (the `X-User-Id` actor)."""
+
+    created_by: Mapped[UUID] = mapped_column()
+    updated_by: Mapped[UUID] = mapped_column()

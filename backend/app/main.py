@@ -12,6 +12,7 @@ from app.errors import register_exception_handlers
 from app.logging import configure_logging
 from app.middlewares.request_id import RequestIdMiddleware
 from app.onboarding import models as onboarding_models  # noqa: F401  registers tables
+from app.policy_engine import models as policy_engine_models  # noqa: F401  registers tables
 from app.retrieval import models as retrieval_models  # noqa: F401  registers tables
 from app.retrieval.models.chunk import ensure_chunk_index
 from app.router import api_router

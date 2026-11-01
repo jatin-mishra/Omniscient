@@ -38,6 +38,18 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = "unauthorized"
+
+
+class InvalidRequestError(AppError):
+    """A well-formed request that breaks a business rule the schema cannot express."""
+
+    status_code = 422
+    code = "invalid_request"
+
+
 def _envelope(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,

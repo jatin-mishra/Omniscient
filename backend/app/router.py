@@ -2,10 +2,12 @@ from fastapi import APIRouter
 
 from app import health
 from app.onboarding.api.router import router as onboarding_router
+from app.policy_engine.api.router import router as policy_engine_router
 from app.retrieval.api.router import router as retrieval_router
 
 v1_router = APIRouter(prefix="/v1")
 v1_router.include_router(onboarding_router)
+v1_router.include_router(policy_engine_router)
 v1_router.include_router(retrieval_router)
 
 api_router = APIRouter()
