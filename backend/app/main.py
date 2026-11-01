@@ -9,6 +9,8 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.db.elastic import create_es_client
+from app.db.postgres import create_db
 from app.middleware.request_id import RequestIdMiddleware
 
 log = logging.getLogger(__name__)
@@ -19,8 +21,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     log.info("starting %s (%s)", settings.app_name, settings.environment)
-    yield
-    log.info("shutdown complete")
+    app.state.engine, app.state.sessionmaker = create_db(settings)
+    app.state.es = create_es_client(settings)
+    try:
+        yield
+    finally:
+        await app.state.es.close()
+        await app.state.engine.dispose()
+        log.info("shutdown complete")
 
 
 def create_app() -> FastAPI:

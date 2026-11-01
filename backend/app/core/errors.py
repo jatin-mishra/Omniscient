@@ -33,6 +33,11 @@ class NotImplementedYetError(AppError):
     code = "not_implemented"
 
 
+class SearchUnavailableError(AppError):
+    status_code = 503
+    code = "search_unavailable"
+
+
 def _envelope(status_code: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,

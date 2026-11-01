@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115",
     "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "elasticsearch[async]>=8.15,<9",
 ]
 
 [dependency-groups]
@@ -30,3 +33,5 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "-m 'not integration'"
+markers = ["integration: needs Postgres + Elasticsearch from docker-compose (make infra-up)"]

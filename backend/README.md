@@ -20,6 +20,18 @@ make typecheck   # mypy --strict
 make fmt         # ruff format + import sort
 ```
 
+## Storage (Postgres + Elasticsearch)
+
+```bash
+make infra-up          # postgres:16 + elasticsearch:8 via docker compose
+make init-storage      # create table `documents` and index `chunks` (idempotent)
+make test-integration  # tests against the real stores
+curl -i http://127.0.0.1:8000/health/ready
+```
+
+Env vars (defaults match docker-compose): `DATABASE_URL`, `ELASTICSEARCH_URL`, `ES_CHUNKS_INDEX`.
+Schema is created with `create_all`; switch to Alembic before the first real schema change.
+
 ## Layout
 
 ```
@@ -31,6 +43,9 @@ app/
   middleware/        pure-ASGI request-id middleware
   api/               routers (health at /health; add versioned routers under api/v1/)
   schemas/           pydantic request/response models
+  db/                engine/session factory, ES client, ORM models
+  repositories/      data access for documents (PG) and chunks (ES)
+  scripts/           one-off CLIs (init_storage)
 tests/               TestClient-based tests
 ```
 

@@ -31,3 +31,19 @@ class SourceChunk(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceChunk]
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    top_k: int = Field(default=5, ge=1, le=50)
+
+
+class SearchHit(BaseModel):
+    chunk_id: str
+    document_id: str
+    text: str
+    score: float
+
+
+class SearchResponse(BaseModel):
+    hits: list[SearchHit]

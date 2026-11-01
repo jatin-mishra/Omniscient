@@ -39,6 +39,15 @@ Rules:
 ### 3. Final code (after approval 1)
 - Show the full code for each file (or a precise diff for modified files) in chat. Do not write files yet.
 - Code must match the approved diagrams; if it had to deviate, call out the deviation explicitly.
+- For any chunk that is not plain vanilla code — framework/library integration, decorators, annotations, DI wiring, config/YAML, ORM mappings, schemas, macros, middleware, or other declarative or "magic" code — add a short note right below that chunk:
+
+  | Item | Content |
+  |---|---|
+  | **What it is** | name of the library/feature/construct |
+  | **What it does** | its effect at runtime, in one or two lines |
+  | **Vanilla equivalent** | what it does in plain code or pseudocode (the hidden steps it hides) |
+  | **Responsibility** | why it is in this design and what it owns |
+  | **Alternatives** | other options and their trade-offs, or "none" |
 - End with: **"Approve the code to write it."** Then stop.
 
 ### 4. Write (after approval 2)

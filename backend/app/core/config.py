@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     cors_origins: list[str] = []
+    database_url: str = "postgresql+asyncpg://omniscient:omniscient@localhost:5432/omniscient"
+    elasticsearch_url: str = "http://localhost:9200"
+    es_chunks_index: str = "chunks"
 
     @property
     def is_prod(self) -> bool:
