@@ -1,0 +1,32 @@
+[project]
+name = "omniscient"
+version = "0.1.0"
+description = "FastAPI service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "pydantic-settings>=2.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx2>=0.1",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
