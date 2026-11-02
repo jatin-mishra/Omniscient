@@ -1,0 +1,18 @@
+lessons:
+  - id: follow-stated-structure-not-defer
+    pattern: >
+      User specified a target project structure explicitly; I kept the existing layout and
+      deferred the restructure to "a later PR" for minimal impact.
+    rule: >
+      When the user states a target structure, plan for that structure now. If I think deferring
+      is safer, present it as an option with the tradeoff — never silently swap it in as the default.
+    applies_to: planning, architecture, refactors
+  - id: simplest-data-access
+    pattern: >
+      I added joins/eager loading, ORM relationships, row locks and exists() subqueries that the
+      user did not ask for.
+    rule: >
+      Default to plain SELECT / INSERT / UPDATE and only the queries the current requirement needs.
+      Propose advanced DB features (locks, joins, server-side defaults) as options, never build
+      them in by default.
+    applies_to: repositories, data access, ORM models

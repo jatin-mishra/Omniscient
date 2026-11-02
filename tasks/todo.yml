@@ -1,0 +1,141 @@
+task: onboarding module + per-module app layout
+spec: metric/test_cases_and_metrics.yml
+items:
+  - [x] move global pieces to app root (config, errors, logging, middlewares, router, health, db)
+  - [x] move RAG code into app/retrieval/{api,core,models,schemas,repositories,deps.py}
+  - [x] skeleton packages policy_engine/, audit/, tracker/
+  - [x] remove app/scripts; create schema at startup behind a setting
+  - [x] onboarding models (BIGINT id + UUID external_id, timestamps, status enum)
+  - [x] onboarding repositories, services (rules), plain select/insert/update only, schemas, api, deps
+  - [x] unit tests (api with fake services, services with fake repos)
+  - [x] integration tests against Postgres (written; not yet run, docker down)
+  - [x] README + Makefile updates
+  - [ ] gates: lint, typecheck, test, test-integration
+
+design:
+  feature: onboarding CRUD for Team, User, Group, GroupUser
+  responsibilities:
+    api: HTTP mapping only (schemas in/out, status codes)
+    core: business rules, external->internal id resolution, owns commit
+    repositories: queries + flush, never commit
+    models: ORM tables, FKs only within the module
+  call_flow: router -> service -> repository -> AsyncSession -> Postgres; AppError -> envelope
+
+---
+task: policy_engine (Policy, UserPermission; Permission is an enum in code only)
+spec: metric/test_cases_and_metrics.yml (second document)
+items:
+  - [x] shared: app/constants (Status moved, PermissionName/ResourceType/ALLOWED_RESOURCES), AuditMixin, db/repository, db/helpers
+  - [x] root: auth.get_actor (X-User-Id), entity_verifier adapter, 401/422 errors, router + model registration
+  - [x] onboarding.public.entity_exists (narrow lookup for the root adapter)
+  - [x] policy_engine models, repositories, schemas, services, api, deps
+  - [x] unit tests (api with stubs, services with fake repos and fake verifier)
+  - [x] integration tests written (test_policy_engine.py)
+  - [ ] test-integration run (docker was down)
+
+review:
+  verified: ruff, mypy --strict, 100 unit tests pass; onboarding tests unchanged; boundary test passes
+  not_verified: integration tests (no docker), I1-I3 unconfirmed
+  notes: directory/document/panel ids are accepted unverified until their owners add a lookup
+
+design:
+  feature: policy_engine Policy + UserPermission
+  responsibilities:
+    api: HTTP mapping, actor from X-User-Id
+    core: resource rules, existence via EntityVerifier protocol, owns commit
+    repositories: queries + flush, never commit
+    root adapter: maps entity kind -> owning module's public lookup
+  call_flow: router -> service -> repository -> Postgres; service -> EntityVerifier -> app.entity_verifier -> onboarding.public
+
+---
+task: retrieval (Directory, Document in Postgres; Chunk in Elasticsearch) - prompt-3
+spec: metric/test_cases_and_metrics.yml (third document)
+items:
+  - [x] spec appended to metric/test_cases_and_metrics.yml
+  - [x] removed old retrieval APIs (documents/query/search), rag stubs, old repos, old tests
+  - [x] models: Directory, Document (+enums), Chunk ES mapping
+  - [x] repositories (PG + ES), schemas, services, api, deps
+  - [x] storage.py: StorageProvider protocol + empty S3/GCP classes (unwired)
+  - [x] unit tests (api, services) and integration tests written
+  - [ ] test-integration run (docker was down)
+
+review:
+  verified: ruff, mypy --strict, 164 unit tests pass; boundary test passes
+  not_verified: integration tests (no docker); I1-I4 unconfirmed
+  notes:
+    - dev DB upgrade: DROP TABLE documents; delete the old `chunks` ES index (documented in README)
+    - upload is metadata only; real S3/GCP upload comes later behind StorageProvider
+    - chunk update is a plain overwrite; changes[] is reserved and empty
+    - retrieval has no public.py yet, so policy_engine still accepts directory/document ids unverified
+
+design:
+  feature: retrieval Directory / Document / Chunk
+  responsibilities:
+    api: HTTP mapping, actor from X-User-Id
+    core: parent/directory/document rules, cycle check, version bump, owns commit (PG); ChunkService writes ES
+    repositories: PG select/insert; ChunkRepository wraps ES with optimistic concurrency, errors -> 503
+    storage: provider protocol, empty implementations
+  call_flow: router -> service -> repository -> Postgres | Elasticsearch; AppError -> envelope
+
+---
+task: retrieval - Temporal integration + ChunkVector (pgvector) (prompt-4)
+spec: metric/test_cases_and_metrics.yml (fourth document)
+items:
+  - [x] deps: temporalio, pgvector
+  - [x] settings: temporal_* (address, namespace, api key, tls, task queue, connect/rpc/execution timeouts), embedding_provider, embedding_dimensions (all env-driven, positive-validated)
+  - [x] app/retrieval/temporal: lazy client factory + ping, LogWorkflow, log_activity, separate worker entrypoint
+  - [x] lifespan creates the client once (app.state.temporal); /health/ready reports temporal
+  - [x] EmbeddingProvider protocol + constant stub + factory
+  - [x] ChunkVector model (vector(EMBEDDING_DIMENSIONS), status, audit, set_status), repository, service, schema, API
+  - [x] POST /v1/workflows/log (202) and POST /v1/chunk-vectors (201)
+  - [x] create_tables runs CREATE EXTENSION vector first, clear error if unavailable
+  - [x] compose: pgvector image, temporal dev server, worker (profile); Makefile worker target
+  - [x] unit tests (api, services, config) + integration tests written
+  - [ ] test-integration run (docker was down)
+
+review:
+  verified: ruff, mypy --strict, 216 unit tests pass (existing tests unchanged except test_readiness, which gained the temporal check)
+  not_verified: all 19 integration tests (docker down) - pgvector extension/column (I1), vector insert + unique chunk_id (I2/I3), real workflow + worker + activity log (I4/K1/K2/K3); I5 (plain postgres image error) has no test; compose temporalio/temporal:latest tag not pinned/verified
+  notes:
+    - Temporal SDK rejects lazy clients for workers: API client is lazy, worker connects eagerly (fails fast if Temporal is down)
+    - SDK client has no close(); lifecycle = create once in lifespan, drop at shutdown
+    - /health/ready now returns 503 when Temporal is down (gates readiness, per L4)
+    - app/health.py imports from app.retrieval for the temporal client (global layer depends on retrieval, same as main.py)
+    - existing local pgdata volume must be recreated when switching to the pgvector image
+    - K2/K3 are covered only by the integration test (a Worker needs a live server)
+
+design:
+  feature: Temporal trigger + logging activity; ChunkVector add API
+  responsibilities:
+    api: HTTP mapping, actor header, 202 / 201
+    core: WorkflowService starts the workflow (errors -> 503); ChunkVectorService checks document, embeds, validates length, owns commit
+    temporal: client factory, workflow (deterministic), activity (logging), worker process
+    repositories: ChunkVectorRepository select/insert only
+  call_flow: |
+    POST /v1/workflows/log -> WorkflowService -> Temporal -> worker -> LogWorkflow -> log_activity
+    POST /v1/chunk-vectors -> ChunkVectorService -> EmbeddingProvider -> ChunkVectorRepository -> Postgres(pgvector)
+
+---
+task: tracker - Ticket + provider interface + webhook (prompt-5)
+spec: metric/test_cases_and_metrics.yml (fifth document) - approved via Q&A
+items:
+  - [x] plan approved (10 decisions, defaults taken)
+  - [x] spec appended to metric/test_cases_and_metrics.yml
+  - [x] spec re-reviewed by user (past due_at ok, title 100, desc 2000, list no auth, stale-event guard via occurred_at + last_event_at)
+  - [x] model, provider (Protocol + Internal + registry), repository, schemas, service, api, deps
+  - [x] config (TRACKER_WEBHOOK_SECRET, default provider), main.py model import, router wiring
+  - [x] unit + integration tests
+  - [x] gates: lint, typecheck, test
+  - [ ] test-integration run (docker was down)
+
+review:
+  verified: ruff, mypy --strict (app), 269 unit tests pass (58 new in tests/tracker); boundary test passes; existing tests unchanged
+  not_verified: integration tests (tests/integration/test_tracker.py) - Postgres unreachable (connection refused); I1-I3 unconfirmed
+  decisions: list/create need X-User-Id, no policy_engine check (seam: service); webhook auth by HMAC-SHA256 hex in X-Signature, fail closed; stale-event guard via occurred_at + last_event_at; webhook updates written as SYSTEM_ACTOR (nil UUID); no tracker_default_provider setting (default in schema)
+  notes: users verified via root EntityVerifier only when explicitly given; provider called before insert (orphan risk for real Jira, flagged for that phase)
+
+design:
+  feature: tracker tickets + provider interface + status webhook
+  call_flow: |
+    POST /v1/tickets -> TicketService -> TicketProvider.create_ticket -> TicketRepository -> Postgres
+    POST /v1/tickets/webhooks/{provider} -> ProviderRegistry -> provider.parse_status_event (verify+decode) -> Ticket.apply_status_event -> commit

@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16  # postgres + the vector extension
+    environment:
+      POSTGRES_USER: omniscient
+      POSTGRES_PASSWORD: omniscient
+      POSTGRES_DB: omniscient
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omniscient"]
+      interval: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: [esdata:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      retries: 30
+
+  temporal:
+    image: temporalio/temporal:latest  # dev server (in-memory + UI on 8233); pin a version for CI
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports: ["7233:7233", "8233:8233"]
+
+  worker:
+    build: .
+    command: ["uv", "run", "--no-dev", "python", "-m", "app.retrieval.temporal.worker"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on: [temporal]
+    profiles: ["worker"]  # `docker compose --profile worker up worker`
+
+volumes:
+  pgdata:
+  esdata:

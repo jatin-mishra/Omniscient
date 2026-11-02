@@ -1,0 +1,39 @@
+[project]
+name = "omniscient"
+version = "0.1.0"
+description = "FastAPI service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "elasticsearch[async]>=8.15,<9",
+    "temporalio>=1.35.0",
+    "pgvector>=0.5.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx2>=0.1",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-m 'not integration'"
+markers = ["integration: needs Postgres + Elasticsearch from docker-compose (make infra-up)"]
