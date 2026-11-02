@@ -15,7 +15,9 @@ from app.onboarding import models as onboarding_models  # noqa: F401  registers 
 from app.policy_engine import models as policy_engine_models  # noqa: F401  registers tables
 from app.retrieval import models as retrieval_models  # noqa: F401  registers tables
 from app.retrieval.models.chunk import ensure_chunk_index
+from app.retrieval.temporal.client import create_temporal_client
 from app.router import api_router
+from app.tracker import models as tracker_models  # noqa: F401  registers tables
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("starting %s (%s)", settings.app_name, settings.environment)
     app.state.engine, app.state.sessionmaker = create_db(settings)
     app.state.es = create_es_client(settings)
+    app.state.temporal = await create_temporal_client(settings)  # lazy: no connection yet
     try:
         if settings.create_schema_on_startup:
             await create_tables(app.state.engine)

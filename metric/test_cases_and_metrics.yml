@@ -1,0 +1,365 @@
+feature: onboarding CRUD (Team, User, Group, GroupUser) + per-module app layout
+approved: 2026-11-01
+
+success_metrics:
+  - make lint, make typecheck (mypy --strict), make test all pass
+  - make test-integration passes against docker-compose Postgres + ES
+  - every case below is covered by at least one test (id referenced in the test comment)
+  - existing endpoints (/health, /health/ready) unchanged (retrieval's old /v1/documents, /v1/query, /v1/search were removed by the retrieval spec below)
+
+failure_metrics:
+  - any onboarding endpoint returns 500 for a client-caused condition
+  - internal BIGINT id appears in any response body
+  - a business module imports another business module
+
+test_cases:
+  happy_paths:
+    - id: HP-1
+      scenario: create each resource -> 201, UUID `id`, status ACTIVE
+    - id: HP-2
+      scenario: GET /{id} returns the same body as create
+    - id: HP-3
+      scenario: PATCH of one field changes only that field
+    - id: HP-4
+      scenario: empty PATCH body -> 200, nothing changes (idempotent)
+    - id: HP-5
+      scenario: response never contains the internal BIGINT id
+
+  not_found_and_validation:
+    - id: 1
+      scenario: GET / PATCH unknown UUID -> 404 envelope with request_id echoed
+    - id: 2
+      scenario: malformed UUID, blank name, bad email, unknown status, explicit null on required field -> 422
+    - id: 3
+      scenario: unknown body field -> 422 (extra=forbid), typos never silently ignored
+
+  teams:
+    - id: 4
+      scenario: duplicate name, also differing only by case -> 409
+    - id: 5
+      scenario: manager_id unknown -> 404; manager INACTIVE -> 409
+    - id: 6
+      scenario: deactivate team with ACTIVE users -> 409; with only INACTIVE users -> 200
+    - id: 7
+      scenario: clear manager with manager_id null -> 200
+    - id: B
+      scenario: reactivate team whose manager is INACTIVE -> 409, unless same PATCH sets an ACTIVE manager or clears it
+
+  users:
+    - id: 8
+      scenario: duplicate email, also differing only by case -> 409
+    - id: 9
+      scenario: team_id unknown -> 404; team INACTIVE -> 409 (create and move)
+    - id: 10
+      scenario: deactivate user who manages an ACTIVE team -> 409
+    - id: 11
+      scenario: email in PATCH -> 422 (immutable identity key)
+    - id: A
+      scenario: reactivate user whose team is INACTIVE -> 409, unless same PATCH moves them to an ACTIVE team
+
+  groups:
+    - id: 12
+      scenario: duplicate name, also differing only by case -> 409; deactivating a group always allowed
+
+  group_users:
+    - id: 13
+      scenario: group or user unknown -> 404; group or user INACTIVE -> 409
+    - id: 14
+      scenario: duplicate (group, user) pair -> 409 even when existing membership is INACTIVE
+    - id: 15
+      scenario: reactivate membership whose group or user is now INACTIVE -> 409
+
+  integrity_integration:
+    - id: 16
+      scenario: two concurrent creates with the same unique name -> one 201, one 409, never 500
+    - id: 17
+      scenario: a failed request leaves no partial rows (rollback)
+    - id: 18
+      scenario: updated_at changes on PATCH, created_at does not
+    - id: 19
+      scenario: existing suite passes with only import-path changes (no assertion changes)
+    - id: 20
+      scenario: import-boundary test fails if a business module imports another business module
+
+---
+feature: policy_engine (Policy, UserPermission; Permission is an enum in code only)
+approved: 2026-11-01 (edits: directory/document/panel existence not verified yet; DB owns uniqueness)
+
+success_metrics:
+  - make lint, make typecheck, make test pass; onboarding tests pass unchanged
+  - make test-integration passes against docker-compose Postgres
+  - every case below is covered by a test referencing its id
+  - test_module_boundaries passes (policy_engine imports no other business module)
+
+failure_metrics:
+  - any policy_engine endpoint returns 500 for a client-caused condition
+  - internal BIGINT id appears in any response body
+  - a PATCH changes any field other than status
+
+test_cases:
+  happy_paths:
+    - {id: HP-1, scenario: "POST /policies -> 201, UUID id, ACTIVE, created_by == X-User-Id"}
+    - {id: HP-2, scenario: "PATCH /policies/{id} status INACTIVE -> 200, updated_by set"}
+    - {id: HP-3, scenario: "POST /user-permissions team:update + ALL -> 201"}
+    - {id: HP-4, scenario: "POST /user-permissions directory:read + directory id -> 201 (unverified)"}
+    - {id: HP-5, scenario: "PATCH /user-permissions/{id} status INACTIVE -> 200"}
+  auth_header:
+    - {id: A1, scenario: "missing X-User-Id -> 401 envelope"}
+    - {id: A2, scenario: "non-UUID X-User-Id -> 401"}
+  policy:
+    - {id: P1, scenario: "permission_name not in enum -> 422"}
+    - {id: P2, scenario: "effect not ALLOW/DENY -> 422"}
+    - {id: P3, scenario: "duplicate (permission_name, effect) -> 409 (DB unique constraint)"}
+    - {id: P4, scenario: "unknown field in POST or PATCH -> 422"}
+    - {id: P5, scenario: "PATCH with anything besides status -> 422"}
+    - {id: P6, scenario: "PATCH status null or missing -> 422"}
+    - {id: P7, scenario: "PATCH unknown id -> 404"}
+    - {id: P8, scenario: "PATCH invalid status value -> 422"}
+    - {id: P9, scenario: "deactivate policy with ACTIVE user-permissions -> 409"}
+    - {id: P10, scenario: "set ACTIVE on an ACTIVE policy -> 200 (idempotent)"}
+  resource_rules:
+    - {id: R1, scenario: "resource_id ALL with resource_type != ALL -> 422"}
+    - {id: R2, scenario: "UUID resource_id with resource_type ALL -> 422"}
+    - {id: R3, scenario: "resource_id neither ALL nor UUID -> 422"}
+    - {id: R4, scenario: "user:update scoped to a specific id -> 422 (ALL only)"}
+    - {id: R5, scenario: "team:create / team:add_user scoped to an id -> 422"}
+    - {id: R6, scenario: "directory:read accepts team and directory scope"}
+    - {id: R7, scenario: "directory:create with directory scope -> 422 (ALL/team only)"}
+    - {id: R8, scenario: "document:delete accepts team, directory and document scope"}
+    - {id: R9, scenario: "team:update with document resource_type -> 422"}
+    - {id: R10, scenario: "entity_type outside team/group/user -> 422"}
+    - {id: R11, scenario: "lowercase 'all' -> 422"}
+  existence_and_state:
+    - {id: E1, scenario: "unknown policy_id -> 404"}
+    - {id: E2, scenario: "INACTIVE policy -> 409"}
+    - {id: E3, scenario: "unknown entity_id for team, group, user -> 404 each"}
+    - {id: E4, scenario: "unknown team resource_id -> 404"}
+    - {id: E5, scenario: "resource ALL -> no resource existence check"}
+    - {id: E6, scenario: "directory / document / panel ids are not verified, accepted as UUIDs"}
+    - {id: E7, scenario: "duplicate grant -> 409 (DB unique constraint, IntegrityError caught)"}
+    - {id: E8, scenario: "activate user-permission whose policy is INACTIVE -> 409"}
+    - {id: E9, scenario: "PATCH unknown user-permission -> 404"}
+    - {id: E10, scenario: "same entity+policy, different resource -> allowed"}
+  integration:
+    - {id: I1, scenario: "tables created at startup; unique constraints enforced by Postgres"}
+    - {id: I2, scenario: "end to end: team -> policy -> user-permission -> deactivate"}
+    - {id: I3, scenario: "concurrent duplicate POST -> one 201, one 409, never 500"}
+  boundary_and_regression:
+    - {id: B1, scenario: "policy_engine imports no other business module"}
+    - {id: B2, scenario: "onboarding Status values and behaviour unchanged"}
+
+---
+feature: retrieval (Directory + Document in Postgres, Chunk in Elasticsearch); old retrieval APIs removed
+approved: 2026-11-01 (plan approved; upload is metadata-only, storage providers are empty stubs; chunk update is a simple overwrite)
+
+success_metrics:
+  - make lint, make typecheck (mypy --strict), make test all pass
+  - make test-integration passes against docker-compose Postgres + ES
+  - every case below is covered by at least one test (id referenced in the test comment)
+  - /health and /health/ready unchanged; onboarding and policy_engine tests unchanged and green
+
+failure_metrics:
+  - any retrieval endpoint returns 500 for a client-caused condition
+  - internal BIGINT id appears in any response body
+  - retrieval imports another business module
+  - a PATCH changes any field that has no setter in the spec
+
+test_cases:
+  removed_apis:
+    - {id: X1, scenario: "POST /v1/documents (old shape), /v1/query, /v1/search -> 404/405; old routers and rag stubs gone"}
+  happy_paths:
+    - {id: HP-1, scenario: "create root directory -> 201, UUID id, ACTIVE, created_by = updated_by = actor"}
+    - {id: HP-2, scenario: "create child directory under an existing parent -> 201, parent_id echoed as the parent's UUID"}
+    - {id: HP-3, scenario: "PATCH directory name / parent_id / status each changes only that field and sets updated_by"}
+    - {id: HP-4, scenario: "create document -> 201, upload_status INITIATED, status ACTIVE, version 1, etag/raw_storage_url null"}
+    - {id: HP-5, scenario: "PATCH document name / directory_id / etag / raw_storage_url / upload_status / status each applied, version +1, updated_by set"}
+    - {id: HP-6, scenario: "add chunk -> 201, server chunk_id, status ACTIVE, version 1, indexed with ES _id = chunk_id"}
+    - {id: HP-7, scenario: "PATCH chunk status -> 200, status changed, version +1, updated_by/updated_at set"}
+    - {id: HP-8, scenario: "empty PATCH body on directory or document -> 200, nothing changes, version not bumped"}
+  auth_header:
+    - {id: A1, scenario: "missing or non-UUID X-User-Id on any of the 6 APIs -> 401, service never called"}
+  directory_rules:
+    - {id: D1, scenario: "unknown parent_id on create or PATCH -> 404"}
+    - {id: D2, scenario: "duplicate name under the same parent (case-insensitive) -> 409"}
+    - {id: D3, scenario: "same name under different parents -> allowed"}
+    - {id: D4, scenario: "duplicate root names (parent null) -> 409 (NULL parent must not bypass uniqueness)"}
+    - {id: D5, scenario: "set parent_id to itself -> 422"}
+    - {id: D6, scenario: "move a directory under its own descendant (cycle) -> 422"}
+    - {id: D7, scenario: "PATCH parent_id null moves to root (null is meaningful); name/status null -> 422"}
+    - {id: D8, scenario: "create or move under an INACTIVE parent -> 409"}
+    - {id: D9, scenario: "PATCH unknown directory -> 404"}
+    - {id: D10, scenario: "blank / whitespace-only / >128 char name -> 422; name is stripped"}
+    - {id: D11, scenario: "unknown body field (e.g. created_by) -> 422"}
+  document_rules:
+    - {id: DO1, scenario: "unknown directory_id on create or PATCH -> 404"}
+    - {id: DO2, scenario: "INACTIVE directory on create or move -> 409"}
+    - {id: DO3, scenario: "provider outside aws/gcp -> 422; upload_status outside enum -> 422; status outside enum -> 422"}
+    - {id: DO4, scenario: "negative size_in_bytes -> 422; zero allowed"}
+    - {id: DO5, scenario: "blank name / document_type / file_type / content_type / chunking_strategy / embedding_model / bucket / storage_path -> 422"}
+    - {id: DO6, scenario: "client cannot set upload_status, status, version, etag or raw_storage_url on create -> 422"}
+    - {id: DO7, scenario: "PATCH of a field without a setter (version, provider, bucket, size_in_bytes, ...) -> 422"}
+    - {id: DO8, scenario: "PATCH unknown document -> 404"}
+    - {id: DO9, scenario: "PATCH null for a non-nullable field -> 422"}
+    - {id: DO10, scenario: "same name in the same directory is allowed (no uniqueness required)"}
+    - {id: DO11, scenario: "two PATCH calls -> version 3; each bump +1"}
+  chunk_rules:
+    - {id: C1, scenario: "unknown document_id -> 404"}
+    - {id: C2, scenario: "INACTIVE document -> 409 on add chunk"}
+    - {id: C3, scenario: "state outside chunking/media_captioning/contextualizing/work_item_creation/embedding -> 422; state_status outside in-progress/success/failure -> 422"}
+    - {id: C4, scenario: "empty content -> 422; content_checksum blank -> 422; metadata must be an object"}
+    - {id: C5, scenario: "PATCH chunk for unknown chunk_id -> 404"}
+    - {id: C6, scenario: "PATCH chunk whose document_id differs from path document -> 404"}
+    - {id: C7, scenario: "client cannot set chunk_id, version or changes on add -> 422 (changes starts empty)"}
+    - {id: C8, scenario: "PATCH with fields other than status -> 422; status null -> 422"}
+    - {id: C9, scenario: "ES unavailable on add/patch -> 503 search_unavailable, not 500"}
+  storage_stubs:
+    - {id: S1, scenario: "S3 and GCP provider classes exist behind a StorageProvider protocol; methods raise NotImplementedYetError (501); API never calls them"}
+  integration:
+    - {id: I1, scenario: "tables created at startup; self-FK, document FK and case-insensitive unique index enforced by Postgres"}
+    - {id: I2, scenario: "end to end: directory tree -> document -> PATCH document -> add chunk -> PATCH chunk, read back from ES"}
+    - {id: I3, scenario: "concurrent duplicate directory POST -> one 201, one 409, never 500"}
+    - {id: I4, scenario: "ES mapping created with chunk fields; chunk _source contains version, changes [] and timestamps"}
+  boundary_and_regression:
+    - {id: B1, scenario: "retrieval imports no other business module"}
+    - {id: B2, scenario: "onboarding and policy_engine behaviour unchanged"}
+---
+feature: retrieval - Temporal integration (trigger workflow + logging activity, separate worker) and ChunkVector (pgvector) with add-vector API
+approved: PENDING REVIEW (no code written until approved; assumptions to confirm are marked ASSUMPTION)
+
+success_metrics:
+  - make lint, make typecheck (mypy --strict), make test all pass
+  - make test-integration passes against docker-compose pgvector Postgres + Temporal (or reported honestly as not run)
+  - every case below is covered by at least one test (id referenced in the test comment)
+  - existing onboarding, policy_engine and retrieval tests unchanged and green; /health unchanged
+
+failure_metrics:
+  - any new endpoint returns 500 for a client-caused or Temporal-down condition
+  - app fails to start when Temporal is unreachable
+  - internal BIGINT id appears in any response body
+  - retrieval imports another business module
+  - vector length written to Postgres differs from EMBEDDING_DIMENSIONS
+
+test_cases:
+  config:
+    - {id: T1, scenario: "all Temporal settings (address, namespace, api key, tls, task queue, connect/rpc/workflow timeouts) and embedding_dimensions load from env with documented defaults"}
+    - {id: T2, scenario: "non-positive timeout or dimension in env -> settings validation error at startup"}
+    - {id: T3, scenario: "empty api key -> client built without auth; tls flag honored"}
+  client_lifecycle:
+    - {id: L1, scenario: "app boots with Temporal unreachable (lazy connect); no exception at startup"}
+    - {id: L2, scenario: "client created once in lifespan, stored on app.state, closed on shutdown"}
+    - {id: L3, scenario: "get_temporal_client dependency returns the app.state client; overridable in tests"}
+    - {id: L4, scenario: "/health/ready reports Temporal status; Temporal down -> not ready entry, /health liveness unaffected"}
+  trigger_workflow:
+    - {id: W1, scenario: "POST /v1/workflows/log with message -> 202 Accepted, body has workflow_id, workflow started on configured task queue with execution timeout"}
+    - {id: W2, scenario: "missing or non-UUID X-User-Id -> 401, service never called"}
+    - {id: W3, scenario: "blank message / unknown body field -> 422, service never called"}
+    - {id: W4, scenario: "Temporal unreachable or start fails -> 503 workflow_unavailable, not 500"}
+    - {id: W5, scenario: "two triggers produce two distinct workflow_ids (no collision)"}
+    - {id: W6, scenario: "very long message (> max length, ASSUMPTION 1000) -> 422"}
+  worker_and_activity:
+    - {id: K1, scenario: "LogWorkflow executes log_activity exactly once and the activity logs the message with workflow_id"}
+    - {id: K2, scenario: "worker connects using the same settings, registers workflow + activity on the task queue, shuts down gracefully on SIGINT/SIGTERM"}
+    - {id: K3, scenario: "workflow code is deterministic: no I/O or logging in workflow body, only in the activity"}
+  embedding_provider:
+    - {id: E1, scenario: "EmbeddingProvider is a Protocol; ConstantEmbeddingProvider returns a vector of length EMBEDDING_DIMENSIONS with constant values"}
+    - {id: E2, scenario: "same input twice -> identical vector (deterministic stub)"}
+    - {id: E3, scenario: "factory returns the stub for the default provider name; unknown provider -> InvalidRequestError (422) or startup error (ASSUMPTION: error at wiring time)"}
+  chunk_vector_add:
+    - {id: V1, scenario: "POST /v1/chunk-vectors with chunk_id, document_id, content -> 201, ACTIVE, created_by = updated_by = actor, response has no raw BIGINT id and does not echo the full vector (ASSUMPTION: omit vector from response)"}
+    - {id: V2, scenario: "service calls the embedding provider once with the content and stores its vector in Postgres"}
+    - {id: V3, scenario: "missing or non-UUID X-User-Id -> 401, service never called"}
+    - {id: V4, scenario: "blank chunk_id / blank content / non-UUID document_id / unknown body field -> 422, service never called"}
+    - {id: V5, scenario: "client cannot set status, created_by, updated_by or vector on create -> 422"}
+    - {id: V6, scenario: "unknown document_id -> 404 (ASSUMPTION: document existence is checked in Postgres; chunk existence in ES is NOT checked)"}
+    - {id: V7, scenario: "INACTIVE document -> 409"}
+    - {id: V8, scenario: "duplicate chunk_id -> 409 (ASSUMPTION: unique chunk_id; one vector per chunk), never 500"}
+    - {id: V9, scenario: "provider returns wrong-length vector -> 500-class internal error is avoided: service rejects with a clear internal error and nothing is persisted"}
+    - {id: V10, scenario: "embedding provider raises -> nothing persisted, session rolled back"}
+    - {id: V11, scenario: "service owns commit; repository only flushes"}
+  chunk_vector_model:
+    - {id: M1, scenario: "ChunkVector uses IdMixin, TimestampMixin, AuditMixin and status_column(); defaults status ACTIVE"}
+    - {id: M2, scenario: "set_status(status, actor) updates status and updated_by; invalid status rejected by type/CHECK"}
+    - {id: M3, scenario: "setting the same status is idempotent"}
+    - {id: M4, scenario: "no API for set_status in this prompt (model method only, unit-tested) - ASSUMPTION"}
+  integration:
+    - {id: I1, scenario: "startup creates the vector extension before create_all; chunk_vectors table exists with vector(EMBEDDING_DIMENSIONS) column; startup is idempotent on second boot"}
+    - {id: I2, scenario: "end to end: create directory + document, POST chunk-vector, read the row back, vector equals the stub constant"}
+    - {id: I3, scenario: "duplicate chunk_id enforced by Postgres unique constraint -> 409"}
+    - {id: I4, scenario: "end to end: POST workflow with a running worker -> workflow completes and the activity log line is observed"}
+    - {id: I5, scenario: "plain postgres image without pgvector -> clear startup error naming the missing extension"}
+  boundary_and_regression:
+    - {id: B1, scenario: "retrieval (including temporal/ subpackage) imports no other business module"}
+    - {id: B2, scenario: "onboarding, policy_engine and existing retrieval behaviour unchanged"}
+    - {id: B3, scenario: "existing tables unaffected by switching the postgres image to pgvector/pgvector:pg16"}
+
+---
+feature: tracker - Ticket (Postgres) with provider interface (INTERNAL now, Jira later), add + list APIs, status-update webhook (prompt-5)
+approved: PENDING REVIEW (no code written until approved; assumptions to confirm are marked ASSUMPTION)
+
+success_metrics:
+  - make lint, make typecheck (mypy --strict), make test all pass
+  - make test-integration passes against docker-compose Postgres (or reported honestly as not run)
+  - every case below is covered by at least one test (id referenced in the test comment)
+  - existing onboarding, policy_engine and retrieval tests unchanged and green
+  - adding a provider requires only a new TicketProvider implementation + registry entry (no service/API change)
+
+failure_metrics:
+  - any new endpoint returns 500 for a client-caused or provider-failure condition
+  - internal BIGINT id appears in any response body
+  - webhook mutates a ticket without a valid signature
+  - a stale (older) webhook event overwrites a newer status
+  - tracker imports another business module
+  - resolved_at inconsistent with status (set while open, or null while resolved/closed)
+
+test_cases:
+  config:
+    - {id: C1, scenario: "TRACKER_WEBHOOK_SECRET and default provider load from env; secret defaults to empty"}
+    - {id: C2, scenario: "empty secret -> every webhook rejected 401 (fail closed)"}
+  model:
+    - {id: M1, scenario: "Ticket uses IdMixin, TimestampMixin, AuditMixin; status defaults OPEN; enums stored as lowercase VARCHAR + CHECK"}
+    - {id: M2, scenario: "UNIQUE(provider, external_ticket_id); two tickets may share a document_id"}
+    - {id: M3, scenario: "set_status to RESOLVED/CLOSED sets resolved_at; to OPEN/IN_PROGRESS clears it (reopen); same status twice is a no-op; updated_by recorded"}
+  provider_interface:
+    - {id: P1, scenario: "TicketProvider is a Protocol: create_ticket(spec)->ExternalTicket, parse_status_event(headers, body)->StatusEvent"}
+    - {id: P2, scenario: "InternalProvider generates a unique provider-side external_ticket_id (TKT-<short uuid>) per call and returns status OPEN"}
+    - {id: P3, scenario: "registry returns InternalProvider for 'internal'; unknown provider name -> 422 (API path) / 404 for webhook path"}
+    - {id: P4, scenario: "InternalProvider.parse_status_event maps {external_ticket_id, status} body to StatusEvent; invalid JSON / missing field / unknown status -> 422"}
+    - {id: P5, scenario: "provider raising on create -> 502 ticket_provider_error, nothing persisted"}
+  create_ticket:
+    - {id: T1, scenario: "POST /v1/tickets valid body -> 201, status OPEN, provider internal, external_id UUID returned, created_by=updated_by=actor, no BIGINT id in body"}
+    - {id: T2, scenario: "reporter_id omitted -> defaults to actor; assignee_id omitted -> null"}
+    - {id: T3, scenario: "missing or non-UUID X-User-Id -> 401, service never called"}
+    - {id: T4, scenario: "blank title, unknown document_type, non-UUID document_id, bad priority/type, unknown body field -> 422, service never called"}
+    - {id: T5, scenario: "client cannot set status, resolved_at, external_ticket_id, created_by -> 422"}
+    - {id: T6, scenario: "reporter or assignee user not found (verifier says False) -> 404; verifier returns None -> accepted unverified (same as policy_engine)"}
+    - {id: T7, scenario: "due_at in the past -> accepted (confirmed); due_at naive datetime -> 422 (timezone required)"}
+    - {id: T8, scenario: "service owns commit; repository only flushes; provider called before insert"}
+    - {id: T9, scenario: "duplicate (provider, external_ticket_id) at commit -> 409, never 500"}
+    - {id: T10, scenario: "title > 100 chars or description > 2000 chars -> 422; exactly 100 / 2000 accepted (confirmed limits)"}
+  list_tickets:
+    - {id: G1, scenario: "GET /v1/tickets?document_type=rca&document_id=<uuid> -> 200, tickets newest first, no BIGINT id"}
+    - {id: G2, scenario: "no tickets for the document -> 200 with empty list"}
+    - {id: G3, scenario: "other documents' tickets are not returned"}
+    - {id: G4, scenario: "missing document_type or document_id, non-UUID document_id, unknown document_type -> 422"}
+    - {id: G5, scenario: "missing or non-UUID X-User-Id -> 401, service never called (policy_engine check: PENDING user decision)"}
+  webhook:
+    - {id: W1, scenario: "valid signature + known ticket + new status -> 204, status updated, updated_by=SYSTEM_ACTOR"}
+    - {id: W2, scenario: "move to RESOLVED/CLOSED -> resolved_at set; later reopen -> resolved_at cleared"}
+    - {id: W3, scenario: "same status delivered twice -> 204 both times, row unchanged (idempotent retry)"}
+    - {id: W4, scenario: "stale-event guard: event.occurred_at older than the last applied provider event -> 204, ticket unchanged; newer or equal-and-different applies; any status transition allowed (no state machine)"},
+    {id: W13, scenario: "occurred_at missing or naive datetime -> 422; stored as ticket.last_event_at (extra column) so manual updated_at changes do not affect the guard"}
+    - {id: W5, scenario: "missing or wrong X-Signature -> 401, ticket untouched"}
+    - {id: W6, scenario: "signature computed over the exact raw body; altered body with old signature -> 401"}
+    - {id: W7, scenario: "signature compared in constant time (hmac.compare_digest)"}
+    - {id: W8, scenario: "unknown provider path segment -> 404"}
+    - {id: W9, scenario: "valid signature but unknown external_ticket_id -> 404"}
+    - {id: W10, scenario: "valid signature, malformed payload -> 422"}
+    - {id: W11, scenario: "webhook needs no X-User-Id header"}
+    - {id: W12, scenario: "ticket of provider A not matched by external id from provider B"}
+  integration:
+    - {id: I1, scenario: "startup creates tickets table with unique + document index; idempotent on second boot"}
+    - {id: I2, scenario: "end to end: create ticket, list by document, webhook RESOLVED, list shows status + resolved_at"}
+    - {id: I3, scenario: "unique (provider, external_ticket_id) enforced by Postgres"}
+  boundary_and_regression:
+    - {id: B1, scenario: "tracker imports no other business module (existing boundary test)"}
+    - {id: B2, scenario: "onboarding, policy_engine, retrieval behaviour and tests unchanged"}

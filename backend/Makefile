@@ -1,7 +1,10 @@
-.PHONY: dev test lint fmt typecheck infra-up infra-down test-integration
+.PHONY: dev worker test lint fmt typecheck infra-up infra-down test-integration
 
 dev:
 	uv run uvicorn app.main:app --reload
+
+worker:
+	uv run python -m app.retrieval.temporal.worker
 
 test:
 	uv run pytest -q

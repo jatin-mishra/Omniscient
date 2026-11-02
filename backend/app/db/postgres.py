@@ -1,7 +1,7 @@
 import logging
 
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -23,6 +23,12 @@ def create_db(settings: Settings) -> tuple[AsyncEngine, async_sessionmaker[Async
 
 async def create_tables(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
+        try:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        except DBAPIError as exc:
+            raise RuntimeError(
+                "pgvector extension is unavailable: run Postgres from the pgvector/pgvector image"
+            ) from exc
         await conn.run_sync(Base.metadata.create_all)
 
 

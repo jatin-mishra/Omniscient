@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16  # postgres + the vector extension
     environment:
       POSTGRES_USER: omniscient
       POSTGRES_PASSWORD: omniscient
@@ -24,6 +24,19 @@ services:
       test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
       interval: 5s
       retries: 30
+
+  temporal:
+    image: temporalio/temporal:latest  # dev server (in-memory + UI on 8233); pin a version for CI
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports: ["7233:7233", "8233:8233"]
+
+  worker:
+    build: .
+    command: ["uv", "run", "--no-dev", "python", "-m", "app.retrieval.temporal.worker"]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on: [temporal]
+    profiles: ["worker"]  # `docker compose --profile worker up worker`
 
 volumes:
   pgdata:
